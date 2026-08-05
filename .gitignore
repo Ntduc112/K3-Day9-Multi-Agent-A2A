@@ -1,0 +1,30 @@
+# Environment variables & secrets (CRITICAL: DO NOT COMMIT KEYS)
+.env
+.env.*
+*.env
+
+# Python bytecode & cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary scratch files
+scratch/
