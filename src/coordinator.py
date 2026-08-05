@@ -17,6 +17,9 @@ from src.agents.payment_agent import PaymentAgent
 from src.agents.delivery_agent import DeliveryAgent
 from src.agents.policy_agent import PolicyAgent
 from src.agents.verifier_agent import VerifierAgent
+from src.agents.input_validation_agent import InputValidationAgent
+from src.agents.contract_audit_agent import ContractAuditAgent
+from src.agents.resolution_audit_agent import ResolutionAuditAgent
 
 class Coordinator:
     """Orchestrates the multi-agent pipeline dynamically using an LLM Supervisor."""
@@ -27,6 +30,9 @@ class Coordinator:
         self.delivery_agent = DeliveryAgent()
         self.policy_agent = PolicyAgent()
         self.verifier_agent = VerifierAgent(data_dir=data_dir, verify_dataset=verify_dataset)
+        self.input_validation_agent = InputValidationAgent()
+        self.contract_audit_agent = ContractAuditAgent()
+        self.resolution_audit_agent = ResolutionAuditAgent()
 
     def run_case(self, case_input: Dict[str, Any], logger: TraceLogger) -> Dict[str, Any]:
         """Runs a single dispute case dynamically using LLM coordination, with a deterministic fallback."""
@@ -68,25 +74,34 @@ class Coordinator:
         agent_responses = {}
         history = []
         proposal = None
-        max_iterations = 8
+        max_iterations = 12
         iteration = 0
         llm_failed = False
+
+        logger.log_handoff(case_id, "coordinator", "input_validation_agent", "started")
+        input_validation = self.input_validation_agent.run(case_input)
+        agent_responses["input_validation_agent"] = input_validation
+        logger.log_handoff(case_id, "input_validation_agent", "coordinator", input_validation["status"])
 
         # Define supervisor instructions
         supervisor_system_prompt = """You are the Supervisor Agent in an E-commerce Dispute Resolution Multi-Agent system.
 Your job is to orchestrate the resolution of customer disputes dynamically by triggering the correct specialist agents (tools) in sequence.
 
-You have access to the following 5 specialist agents (tools):
+You have access to the following 8 specialist agents (tools):
+0. 'input_validation_agent': Validates the case envelope and policy version. Call first.
 1. 'order_seller_agent': Retrieves order details, item totals, freight values, and checks seller delay. Needs no parameters.
 2. 'payment_agent': Reconciles payments. Requires parameters: 'item_total_brl', 'freight_total_brl' (values gathered from order_seller_agent).
 3. 'delivery_agent': Analyzes delivery lateness (carrier vs seller). Needs no parameters.
-4. 'policy_agent': Generates the resolution proposal. Runs once you have gathered facts from order_seller, payment, and delivery agents.
-5. 'verifier_agent': Verifies the final resolution proposal for format and evidence validity.
+4. 'contract_audit_agent': Audits handoff fields and cross-agent IDs before policy.
+5. 'policy_agent': Generates the resolution proposal. Runs once you have gathered facts from order_seller, payment, delivery, and contract_audit agents.
+6. 'resolution_audit_agent': Checks issue/action/refund/status consistency before final verification.
+7. 'verifier_agent': Verifies the final resolution proposal for format and evidence validity.
 
 Workflow Guidelines:
-- You must call order_seller_agent first to get the financial baselines.
+- You must call input_validation_agent first, then order_seller_agent to get the financial baselines.
 - Call payment_agent and delivery_agent next. Note that payment_agent requires 'item_total_brl' and 'freight_total_brl' as parameters.
-- Call policy_agent to get a proposal.
+- Call contract_audit_agent before policy_agent.
+- Call policy_agent to get a proposal, then resolution_audit_agent.
 - Call verifier_agent to verify the proposal.
 - If verifier_agent confirms the proposal is valid, return next_action = 'finish'.
 - If verifier_agent finds errors, explain how to resolve them or output 'finish' with the best fallback.
@@ -94,7 +109,7 @@ Workflow Guidelines:
 You must respond ONLY with a JSON object in this format:
 {
   "thought": "Your reasoning about the current case state and what agent to run next.",
-  "next_action": "order_seller_agent" | "payment_agent" | "delivery_agent" | "policy_agent" | "verifier_agent" | "finish",
+  "next_action": "order_seller_agent" | "payment_agent" | "delivery_agent" | "contract_audit_agent" | "policy_agent" | "resolution_audit_agent" | "verifier_agent" | "finish",
   "action_input": { ... key-value parameters if calling payment_agent ... }
 }
 """
@@ -174,7 +189,14 @@ You must respond ONLY with a JSON object in this format:
 
             # Execute the chosen agent
             try:
-                if next_action == "order_seller_agent":
+                if next_action == "input_validation_agent":
+                    logger.log_handoff(case_id, "coordinator", "input_validation_agent", "started")
+                    res = self.input_validation_agent.run(case_input)
+                    agent_responses["input_validation_agent"] = res
+                    logger.log_handoff(case_id, "input_validation_agent", "coordinator", res.get("status", "success"))
+                    history.append(f"Result from input_validation_agent: status={res.get('status')}")
+
+                elif next_action == "order_seller_agent":
                     logger.log_handoff(case_id, "coordinator", "order_seller_agent", "started")
                     res = self.order_seller_agent.process(case_id, claimed_order_id)
                     agent_responses["order_seller_agent"] = res
@@ -214,6 +236,19 @@ You must respond ONLY with a JSON object in this format:
                     logger.log_handoff(case_id, "delivery_agent", "coordinator", res.get("status", "success"))
                     history.append(f"Result from delivery_agent: status={res.get('status')}")
                     
+                elif next_action == "contract_audit_agent":
+                    logger.log_handoff(case_id, "coordinator", "contract_audit_agent", "started")
+                    res = self.contract_audit_agent.run({
+                        "case_id": case_id,
+                        "claimed_order_id": claimed_order_id,
+                        "order_facts": agent_responses.get("order_seller_agent", {}),
+                        "payment_facts": agent_responses.get("payment_agent", {}),
+                        "delivery_facts": agent_responses.get("delivery_agent", {}),
+                    })
+                    agent_responses["contract_audit_agent"] = res
+                    logger.log_handoff(case_id, "contract_audit_agent", "coordinator", res.get("status", "success"))
+                    history.append(f"Result from contract_audit_agent: valid={res.get('valid')}")
+
                 elif next_action == "policy_agent":
                     logger.log_handoff(case_id, "coordinator", "policy_agent", "started")
                     
@@ -237,6 +272,13 @@ You must respond ONLY with a JSON object in this format:
                     logger.log_handoff(case_id, "policy_agent", "coordinator", res.get("status", "success"))
                     history.append(f"Result from policy_agent: status={res.get('status')} | proposal_issue={proposal.get('assessment', {}).get('primary_issue') if proposal else 'None'}")
                     
+                elif next_action == "resolution_audit_agent":
+                    logger.log_handoff(case_id, "coordinator", "resolution_audit_agent", "started")
+                    res = self.resolution_audit_agent.run({"case_id": case_id, "proposal": proposal})
+                    agent_responses["resolution_audit_agent"] = res
+                    logger.log_handoff(case_id, "resolution_audit_agent", "coordinator", res.get("status", "success"))
+                    history.append(f"Result from resolution_audit_agent: valid={res.get('valid')}")
+
                 elif next_action == "verifier_agent":
                     logger.log_handoff(case_id, "coordinator", "verifier_agent", "started")
                     req = {
@@ -304,7 +346,23 @@ You must respond ONLY with a JSON object in this format:
                 except Exception as e:
                     logger.log_handoff(case_id, "delivery_agent", "coordinator", f"failed: {str(e)}")
 
-            # 4. Run Policy
+            # 4. Audit the A2A contract before policy
+            if "contract_audit_agent" not in agent_responses:
+                try:
+                    logger.log_handoff(case_id, "coordinator", "contract_audit_agent", "started")
+                    res = self.contract_audit_agent.run({
+                        "case_id": case_id,
+                        "claimed_order_id": claimed_order_id,
+                        "order_facts": agent_responses.get("order_seller_agent", {}),
+                        "payment_facts": agent_responses.get("payment_agent", {}),
+                        "delivery_facts": agent_responses.get("delivery_agent", {}),
+                    })
+                    agent_responses["contract_audit_agent"] = res
+                    logger.log_handoff(case_id, "contract_audit_agent", "coordinator", res.get("status", "success"))
+                except Exception as e:
+                    logger.log_handoff(case_id, "contract_audit_agent", "coordinator", f"failed: {str(e)}")
+
+            # 5. Run Policy
             if "policy_agent" not in agent_responses:
                 try:
                     logger.log_handoff(case_id, "coordinator", "policy_agent", "started")
@@ -327,7 +385,17 @@ You must respond ONLY with a JSON object in this format:
                 except Exception as e:
                     logger.log_handoff(case_id, "policy_agent", "coordinator", f"failed: {str(e)}")
 
-            # 5. Run Verifier
+            # 6. Audit the proposed resolution before dataset verification
+            if "resolution_audit_agent" not in agent_responses:
+                try:
+                    logger.log_handoff(case_id, "coordinator", "resolution_audit_agent", "started")
+                    res = self.resolution_audit_agent.run({"case_id": case_id, "proposal": proposal})
+                    agent_responses["resolution_audit_agent"] = res
+                    logger.log_handoff(case_id, "resolution_audit_agent", "coordinator", res.get("status", "success"))
+                except Exception as e:
+                    logger.log_handoff(case_id, "resolution_audit_agent", "coordinator", f"failed: {str(e)}")
+
+            # 7. Run Verifier
             if "verifier_agent" not in agent_responses:
                 try:
                     logger.log_handoff(case_id, "coordinator", "verifier_agent", "started")
@@ -339,6 +407,26 @@ You must respond ONLY with a JSON object in this format:
                     logger.log_handoff(case_id, "verifier_agent", "coordinator", res.get("status", "success"))
                 except Exception as e:
                     logger.log_handoff(case_id, "verifier_agent", "coordinator", f"failed: {str(e)}")
+
+        # A model may choose `finish` early. Ensure supporting audits still run
+        # before handing the proposal to the caller.
+        if proposal is not None:
+            if "contract_audit_agent" not in agent_responses:
+                logger.log_handoff(case_id, "coordinator", "contract_audit_agent", "started")
+                res = self.contract_audit_agent.run({
+                    "case_id": case_id,
+                    "claimed_order_id": claimed_order_id,
+                    "order_facts": agent_responses.get("order_seller_agent", {}),
+                    "payment_facts": agent_responses.get("payment_agent", {}),
+                    "delivery_facts": agent_responses.get("delivery_agent", {}),
+                })
+                agent_responses["contract_audit_agent"] = res
+                logger.log_handoff(case_id, "contract_audit_agent", "coordinator", res.get("status", "success"))
+            if "resolution_audit_agent" not in agent_responses:
+                logger.log_handoff(case_id, "coordinator", "resolution_audit_agent", "started")
+                res = self.resolution_audit_agent.run({"case_id": case_id, "proposal": proposal})
+                agent_responses["resolution_audit_agent"] = res
+                logger.log_handoff(case_id, "resolution_audit_agent", "coordinator", res.get("status", "success"))
 
         # Return proposal if gathered, else fallback
         return proposal if proposal else fallback_resolution

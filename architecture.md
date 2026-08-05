@@ -6,7 +6,7 @@ This document describes the updated **Model 1: LLM-Based Supervisor Architecture
 
 ## System Overview
 
-The system operates as a hybrid Multi-Agent architecture. A central **LLM Supervisor (Coordinator)** dynamically orchestrates 5 specialist agents using a reasoning loop (ReAct pattern). The specialist agents perform deterministic calculations against database tables to eliminate hallucination.
+The system operates as a hybrid Multi-Agent architecture. A central **LLM Supervisor (Coordinator)** dynamically orchestrates 8 specialist agents using a reasoning loop (ReAct pattern). Five domain agents perform deterministic calculations against database tables, while three supporting agents validate the case envelope, A2A contracts, and final resolution consistency.
 
 If the LLM endpoint experiences network latency, rate limits, or connectivity issues, the Coordinator automatically activates a **State-Preserved Deterministic Fallback Engine** to guarantee 100% case completion.
 
@@ -23,9 +23,13 @@ graph TD
         
         Supervisor -- "Action: delivery_agent" --> DA[Delivery Agent]
         DA -- "delivery facts" --> Supervisor
+        Supervisor -- "Action: contract_audit_agent" --> CA[Contract Audit Agent]
+        CA -- "contract result" --> Supervisor
         
         Supervisor -- "Action: policy_agent" --> PolA[Policy Agent]
         PolA -- "candidate proposal" --> Supervisor
+        Supervisor -- "Action: resolution_audit_agent" --> RA[Resolution Audit Agent]
+        RA -- "resolution result" --> Supervisor
         
         Supervisor -- "Action: verifier_agent" --> VA[Verifier Agent]
         VA -- "validation result" --> Supervisor
@@ -83,6 +87,19 @@ graph TD
     *   Cross-references `evidence_ids`, entity IDs, and financial figures directly against the Olist CSV dataset.
     *   Ensures 100% compliance with data schemas and mathematical consistency.
 
+### 7. Supporting Sub-agents
+
+*   **Input Validation Agent** (`src/agents/input_validation_agent.py`): checks the
+    required case envelope and supported policy version before data access.
+*   **Contract Audit Agent** (`src/agents/contract_audit_agent.py`): checks that
+    order, payment and delivery handoffs preserve required IDs and facts.
+*   **Resolution Audit Agent** (`src/agents/resolution_audit_agent.py`): independently
+    checks that the Policy Agent's issue, refund, status and action agree with
+    `EC_POLICY_V1` before the dataset-backed Verifier Agent runs.
+
+These agents are validation-only. They do not infer missing CSV events, select a
+different policy rule, or replace the Policy/Verifier agents.
+
 ---
 
 ## Data Access Matrix
@@ -95,6 +112,9 @@ graph TD
 | **Delivery** | *None (receives order facts from contract)* | `order_facts` dictionary |
 | **Policy** | *None (receives facts from Order, Payment, Delivery)* | `EC_POLICY_V1` rules engine |
 | **Verifier** | `olist_orders_dataset.csv`<br>`olist_sellers_dataset.csv`<br>`olist_order_items_dataset.csv`<br>`olist_order_payments_dataset.csv` | Full dataset schema & evidence verification |
+| **Input Validation** | *None* | Case envelope and policy version |
+| **Contract Audit** | *None* | Cross-agent A2A handoff consistency |
+| **Resolution Audit** | *None* | Issue/refund/status/action consistency |
 
 ---
 

@@ -200,3 +200,20 @@ Trong repo phải có thêm:
 2. Khi nộp bài, chỉ nén folder `output/` thành file zip; không đưa source code, `.env` hoặc các file audit vào zip này.
 3. Luôn commit toàn bộ source code lên repo trước khi nộp file output zip để chấm điểm.
 4. API key và secret phải đặt trong file `.env` và không được commit. Tên model sử dụng phải được khai báo rõ trong source code, đồng thời ghi lại trong `metadata.json` (Tức là model name không ghi vào .env, cho vào code để chấm)
+
+## 10. Sub-agent bổ trợ và kiểm tra handoff
+
+Ngoài 5 domain agent chính, hệ thống có thể dùng sub-agent bổ trợ miễn là chúng
+không tự tạo sự kiện hoặc quyết định ngoài dữ liệu CSV và vẫn giữ đúng contract của
+bài. Repo này triển khai 3 sub-agent bổ trợ:
+
+- `input_validation_agent`: kiểm tra `case_id`, `claimed_order_id` và `EC_POLICY_V1`
+  trước khi truy vấn dữ liệu.
+- `contract_audit_agent`: kiểm tra handoff giữa Order/Seller, Payment và Delivery;
+  đặc biệt là entity ID, payment ID và các field bắt buộc.
+- `resolution_audit_agent`: kiểm tra độc lập quan hệ giữa `primary_issue`, refund,
+  `case_status` và `resolution_actions` trước `verifier_agent`.
+
+Các agent này chỉ kiểm tra và trả lỗi có cấu trúc. `PolicyAgent` vẫn là agent duy
+nhất áp dụng sáu rule theo thứ tự ưu tiên, còn `VerifierAgent` vẫn là bước xác minh
+cuối cùng trước khi ghi output.
