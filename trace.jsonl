@@ -899,3 +899,15 @@
 {"timestamp": "2026-08-05T12:48:33.394762+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "delivery_agent", "to_agent": "coordinator", "status": "success"}
 {"timestamp": "2026-08-05T12:48:40.868887+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "delivery_agent", "status": "started"}
 {"timestamp": "2026-08-05T12:48:40.870979+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "delivery_agent", "to_agent": "coordinator", "status": "success"}
+{"timestamp": "2026-08-05T12:48:49.323917+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "delivery_agent", "status": "started"}
+{"timestamp": "2026-08-05T12:48:49.325287+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "delivery_agent", "to_agent": "coordinator", "status": "success"}
+{"timestamp": "2026-08-05T12:48:56.518238+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "policy_agent", "status": "started"}
+{"timestamp": "2026-08-05T12:48:56.518944+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "policy_agent", "to_agent": "coordinator", "status": "success"}
+{"timestamp": "2026-08-05T12:48:56.519958+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "verifier_agent", "status": "started"}
+{"timestamp": "2026-08-05T12:48:56.520956+07:00", "case_id": "EC_048", "event": "agent_handoff", "from_agent": "verifier_agent", "to_agent": "coordinator", "status": "success"}
+{"timestamp": "2026-08-05T12:48:57.451151+07:00", "case_id": "EC_049", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "order_seller_agent", "status": "started"}
+{"timestamp": "2026-08-05T12:48:57.451151+07:00", "case_id": "EC_049", "event": "agent_handoff", "from_agent": "order_seller_agent", "to_agent": "coordinator", "status": "success"}
+{"timestamp": "2026-08-05T12:49:00.678947+07:00", "case_id": "EC_049", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "payment_agent", "status": "started"}
+{"timestamp": "2026-08-05T12:49:00.680055+07:00", "case_id": "EC_049", "event": "agent_handoff", "from_agent": "payment_agent", "to_agent": "coordinator", "status": "success"}
+{"timestamp": "2026-08-05T12:49:08.197567+07:00", "case_id": "EC_049", "event": "agent_handoff", "from_agent": "coordinator", "to_agent": "delivery_agent", "status": "started"}
+{"timestamp": "2026-08-05T12:49:08.198565+07:00", "case_id": "EC_049", "event": "agent_handoff", "from_agent": "delivery_agent", "to_agent": "coordinator", "status": "success"}
